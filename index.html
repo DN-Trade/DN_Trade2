@@ -1,4 +1,5 @@
 <!DOCTYPE html>
+
 <html lang="zh-Hant">
 <head>
     <meta charset="UTF-8">
@@ -33,6 +34,9 @@
         .no-scrollbar::-webkit-scrollbar { display: none; }
         .price-update { animation: pulse 0.5s ease-out; }
         @keyframes pulse { 0% { color: #FFD700; } 100% { color: #39FF14; } }
+        .ws-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: #333; margin-right: 5px; transition: background 0.5s; }
+        .ws-dot.connected { background: #39FF14; box-shadow: 0 0 6px #39FF14; }
+        .ws-dot.error { background: #ff4444; }
     </style>
 </head>
 <body>
@@ -49,242 +53,280 @@
         </div>
     </header>
 
-    <main class="flex-1 grid grid-cols-12 overflow-hidden relative">
-        <aside id="left-drawer" class="col-span-12 lg:col-span-2 drawer lg:block">
-            <div class="p-8 border-b border-white/5">
-                <span class="text-[11px] font-bold text-orange-500 uppercase tracking-[0.2em] mb-3 block">Bitopro Price</span>
-                <div id="bito-last" class="text-4xl font-mono neon-green tracking-tighter">--.---</div>
-            </div>
-            <div class="p-8 border-b border-white/5">
-                <span class="text-[11px] font-bold text-blue-500 uppercase tracking-[0.2em] mb-3 block">Max Price</span>
-                <div id="max-last" class="text-4xl font-mono text-blue-400 tracking-tighter">--.---</div>
-            </div>
-        </aside>
+```
+<main class="flex-1 grid grid-cols-12 overflow-hidden relative">
+    <aside id="left-drawer" class="col-span-12 lg:col-span-2 drawer lg:block">
+        <div class="p-8 border-b border-white/5">
+            <span class="text-[11px] font-bold text-orange-500 uppercase tracking-[0.2em] mb-3 block">
+                <span id="bito-dot" class="ws-dot"></span>Bitopro Price
+            </span>
+            <div id="bito-last" class="text-4xl font-mono neon-green tracking-tighter">--.---</div>
+        </div>
+        <div class="p-8 border-b border-white/5">
+            <span class="text-[11px] font-bold text-blue-500 uppercase tracking-[0.2em] mb-3 block">
+                <span id="max-dot" class="ws-dot"></span>Max Price
+            </span>
+            <div id="max-last" class="text-4xl font-mono text-blue-400 tracking-tighter">--.---</div>
+        </div>
+    </aside>
 
-        <section id="chart-container" class="col-span-12 lg:col-span-8 overflow-hidden relative">
-            <div id="tv_main" class="h-full w-full"></div>
-        </section>
+    <section id="chart-container" class="col-span-12 lg:col-span-8 overflow-hidden relative">
+        <div id="tv_main" class="h-full w-full"></div>
+    </section>
 
-        <aside id="right-drawer" class="col-span-12 lg:col-span-2 drawer lg:flex flex-col">
-            <div class="p-5 text-[11px] text-gray-500 font-bold border-b border-white/5 flex justify-between uppercase tracking-widest">
-                Watchlist <span>Sort</span>
-            </div>
-            <div id="watchlist" class="flex-1 overflow-y-auto p-4 no-scrollbar"></div>
-            <div class="p-5 border-t border-white/5">
-                <input type="text" id="new-sym" placeholder="輸入代碼搜尋 (例: BTCUSDT)">
-            </div>
-        </aside>
-    </main>
+    <aside id="right-drawer" class="col-span-12 lg:col-span-2 drawer lg:flex flex-col">
+        <div class="p-5 text-[11px] text-gray-500 font-bold border-b border-white/5 flex justify-between uppercase tracking-widest">
+            Watchlist <span>Sort</span>
+        </div>
+        <div id="watchlist" class="flex-1 overflow-y-auto p-4 no-scrollbar"></div>
+        <div class="p-5 border-t border-white/5">
+            <input type="text" id="new-sym" placeholder="輸入代碼搜尋 (例: BTCUSDT)">
+        </div>
+    </aside>
+</main>
 
-    <div class="mobile-bottom-nav">
-        <button onclick="toggleDrawer('left')" id="btn-left" class="btn-nav">實時匯率</button>
-        <button onclick="closeDrawers()" id="btn-chart" class="btn-nav active">交易圖表</button>
-        <button onclick="toggleDrawer('right')" id="btn-right" class="btn-nav">自選清單</button>
-    </div>
+<div class="mobile-bottom-nav">
+    <button onclick="toggleDrawer('left')" id="btn-left" class="btn-nav">實時匯率</button>
+    <button onclick="closeDrawers()" id="btn-chart" class="btn-nav active">交易圖表</button>
+    <button onclick="toggleDrawer('right')" id="btn-right" class="btn-nav">自選清單</button>
+</div>
 
-    <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
-    <script>
-        const STORAGE_KEY = 'DN_Trade_V19_Ultimate';
-        const defaultLists = {
-            forex: ['FX_IDC:USDTWD', 'FX_IDC:USDCNY'],
-            crypto: ['BINANCE:BTCUSDT', 'BINANCE:ETHUSDT'],
-            stock: ['NASDAQ:NVDA', 'NASDAQ:TSLA']
-        };
+<script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
+<script>
+    const STORAGE_KEY = 'DN_Trade_V19_Ultimate';
+    const defaultLists = {
+        forex: ['FX_IDC:USDTWD', 'FX_IDC:USDCNY'],
+        crypto: ['BINANCE:BTCUSDT', 'BINANCE:ETHUSDT'],
+        stock: ['NASDAQ:NVDA', 'NASDAQ:TSLA']
+    };
 
-        let currentCat = 'forex';
-        let storage = JSON.parse(localStorage.getItem(STORAGE_KEY)) || defaultLists;
-        let tvWidget = null;
-        let maxWs = null; // WebSocket 連接
+    let currentCat = 'forex';
+    let storage = JSON.parse(localStorage.getItem(STORAGE_KEY)) || defaultLists;
+    let tvWidget = null;
+    let maxWs = null;
+    let maxPingTimer = null;
 
-        window.onload = () => {
-            loadChart('FX_IDC:USDTWD'); 
-            initMAXWebSocket(); // 初始化 WebSocket 而不是 REST API 輪詢
-            renderWatchlist(false);
-        };
-
-        // ===== 新增：MAX WebSocket 實時數據 =====
-        function initMAXWebSocket() {
-            maxWs = new WebSocket('wss://max-stream.maicoin.com/ws');
-            
-            maxWs.onopen = () => {
-                console.log('MAX WebSocket connected');
-                // 訂閱 USDT/TWD 和 BTC/TWD
-                maxWs.send(JSON.stringify({
-                    action: 'subscribe',
-                    subscriptions: [
-                        { channel: 'tickers', markets: ['usdttwd', 'btctwd'] }
-                    ]
-                }));
-            };
-
-            maxWs.onmessage = (event) => {
-                try {
-                    const data = JSON.parse(event.data);
-                    
-                    // 處理 ticker 更新
-                    if (data.channel === 'tickers' && data.data) {
-                        data.data.forEach(ticker => {
-                            if (ticker.market === 'usdttwd') {
-                                const priceEl = document.getElementById('max-last');
-                                priceEl.classList.remove('price-update');
-                                void priceEl.offsetWidth; // 觸發重排
-                                priceEl.classList.add('price-update');
-                                priceEl.innerText = parseFloat(ticker.last).toFixed(3);
-                            }
-                        });
-                    }
-                } catch (e) {
-                    console.log('Error parsing MAX WebSocket message:', e);
-                }
-            };
-
-            maxWs.onerror = (error) => {
-                console.error('MAX WebSocket error:', error);
-            };
-
-            maxWs.onclose = () => {
-                console.log('MAX WebSocket closed, reconnecting in 3s...');
-                setTimeout(initMAXWebSocket, 3000); // 自動重連
-            };
-        }
-
-        // ===== 保留舊的 Bitopro REST API（可選） =====
-        async function fetchBitoproPrice() {
-            const bitoUrl = 'https://api.bitopro.com/v3/tickers/usdt_twd';
-            try {
-                const res = await fetch(bitoUrl);
-                const json = await res.json();
-                if (json && json.data && json.data.lastPrice) {
-                    const priceEl = document.getElementById('bito-last');
-                    priceEl.classList.remove('price-update');
-                    void priceEl.offsetWidth;
-                    priceEl.classList.add('price-update');
-                    priceEl.innerText = parseFloat(json.data.lastPrice).toFixed(3);
-                }
-            } catch (e) {
-                console.log("BitoPro fetch failed");
-            }
-        }
-        
-        // 啟動 Bitopro 輪詢（可選，如果想保留）
+    window.onload = () => {
+        loadChart('FX_IDC:USDTWD');
+        initMAXWebSocket();
         fetchBitoproPrice();
         setInterval(fetchBitoproPrice, 5000);
+        renderWatchlist(false);
+    };
 
-        function loadChart(symbol) {
-            tvWidget = new TradingView.widget({
-                "autosize": true,
-                "symbol": symbol,
-                "interval": "15",
-                "theme": "dark",
-                "style": "1",
-                "locale": "zh_TW",
-                "container_id": "tv_main",
-                "allow_symbol_change": true,
-                "hide_side_toolbar": false,
-                "enable_publishing": false,
-                "backgroundColor": "rgba(0, 0, 0, 1)",
-                "gridColor": "rgba(25, 25, 25, 1)",
-                "toolbar_bg": "#000000"
-            });
-            updateActiveState(symbol);
-            if (window.innerWidth < 1024) closeDrawers();
-        }
+    // ===== MAX WebSocket (已修正) =====
+    function initMAXWebSocket() {
+        // 清除舊的 ping timer
+        if (maxPingTimer) clearInterval(maxPingTimer);
 
-        function updateActiveState(symbol) {
-            document.querySelectorAll('.list-item').forEach(el => { el.classList.toggle('active', el.dataset.sym === symbol); });
-        }
+        maxWs = new WebSocket('wss://max-stream.maicoin.com/ws');
 
-        function renderWatchlist(shouldLoadFirst = true) {
-            const listEl = document.getElementById('watchlist');
-            listEl.innerHTML = '';
-            storage[currentCat].forEach(sym => {
-                const div = document.createElement('div');
-                div.className = 'list-item';
-                div.dataset.sym = sym;
-                div.innerHTML = `
-                    <div class="flex-1" onclick="loadChart('${sym}')">
-                        <div class="font-bold text-[16px]">${sym.split(':')[1] || sym}</div>
-                        <div class="text-[10px] text-gray-600 font-mono tracking-widest uppercase">${sym.split(':')[0]}</div>
-                    </div>
-                    <button onclick="removeSym('${sym}', event)" class="text-gray-600 px-3 text-2xl">&times;</button>`;
-                listEl.appendChild(div);
-            });
-            if (shouldLoadFirst && storage[currentCat].length > 0) loadChart(storage[currentCat][0]);
-        }
+        maxWs.onopen = () => {
+            console.log('MAX WebSocket connected');
+            document.getElementById('max-dot').className = 'ws-dot connected';
 
-        window.removeSym = function(sym, e) {
-            e.stopPropagation();
-            storage[currentCat] = storage[currentCat].filter(s => s !== sym);
-            save(); renderWatchlist(false);
+            // ✅ 修正1：channel 用單數 "ticker"，market 用單數字串
+            maxWs.send(JSON.stringify({
+                action: 'subscribe',
+                subscriptions: [
+                    { channel: 'ticker', market: 'usdttwd' }
+                ]
+            }));
+
+            // ✅ 修正2：每 30 秒發送 ping 保持連線，否則 130 秒後會被伺服器斷開
+            maxPingTimer = setInterval(() => {
+                if (maxWs && maxWs.readyState === WebSocket.OPEN) {
+                    maxWs.send(JSON.stringify({ action: 'ping' }));
+                }
+            }, 30000);
         };
 
-        function save() { localStorage.setItem(STORAGE_KEY, JSON.stringify(storage)); }
+        maxWs.onmessage = (event) => {
+            try {
+                const data = JSON.parse(event.data);
 
-        // 導航切換
-        document.querySelectorAll('.nav-item').forEach(nav => {
-            nav.onclick = function() {
-                document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
-                this.classList.add('active');
-                currentCat = this.dataset.cat;
-                renderWatchlist(true);
-            };
+                // ✅ 修正3：MAX 用短鍵回應
+                // c = channel, M = market, tk = ticker object, C = close price
+                if (data.c === 'ticker' && data.M === 'usdttwd' && data.tk) {
+                    // C = close price（最新成交價）
+                    const price = data.tk.C || data.tk.p;
+                    if (price) {
+                        const priceEl = document.getElementById('max-last');
+                        priceEl.classList.remove('price-update');
+                        void priceEl.offsetWidth; // 觸發重排以重置動畫
+                        priceEl.classList.add('price-update');
+                        priceEl.innerText = parseFloat(price).toFixed(3);
+                    }
+                }
+                // 處理訂閱確認訊息（e = event）
+                if (data.e === 'subscribed') {
+                    console.log('MAX subscription confirmed:', data);
+                }
+            } catch (e) {
+                console.log('Error parsing MAX WebSocket message:', e);
+            }
+        };
+
+        maxWs.onerror = (error) => {
+            console.error('MAX WebSocket error:', error);
+            document.getElementById('max-dot').className = 'ws-dot error';
+        };
+
+        maxWs.onclose = () => {
+            clearInterval(maxPingTimer);
+            document.getElementById('max-dot').className = 'ws-dot error';
+            console.log('MAX WebSocket closed, reconnecting in 3s...');
+            setTimeout(initMAXWebSocket, 3000);
+        };
+    }
+
+    // ===== Bitopro REST API 輪詢 =====
+    async function fetchBitoproPrice() {
+        const bitoUrl = 'https://api.bitopro.com/v3/tickers/usdt_twd';
+        try {
+            const res = await fetch(bitoUrl);
+            const json = await res.json();
+            if (json && json.data && json.data.lastPrice) {
+                const priceEl = document.getElementById('bito-last');
+                priceEl.classList.remove('price-update');
+                void priceEl.offsetWidth;
+                priceEl.classList.add('price-update');
+                priceEl.innerText = parseFloat(json.data.lastPrice).toFixed(3);
+                document.getElementById('bito-dot').className = 'ws-dot connected';
+            }
+        } catch (e) {
+            console.log("BitoPro fetch failed");
+            document.getElementById('bito-dot').className = 'ws-dot error';
+        }
+    }
+
+    function loadChart(symbol) {
+        tvWidget = new TradingView.widget({
+            "autosize": true,
+            "symbol": symbol,
+            "interval": "15",
+            "theme": "dark",
+            "style": "1",
+            "locale": "zh_TW",
+            "container_id": "tv_main",
+            "allow_symbol_change": true,
+            "hide_side_toolbar": false,
+            "enable_publishing": false,
+            "backgroundColor": "rgba(0, 0, 0, 1)",
+            "gridColor": "rgba(25, 25, 25, 1)",
+            "toolbar_bg": "#000000"
         });
+        updateActiveState(symbol);
+        if (window.innerWidth < 1024) closeDrawers();
+    }
 
-        // 修正搜尋邏輯
-        document.getElementById('new-sym').onkeypress = function(e) {
-            if (e.key === 'Enter' && this.value) {
-                let s = this.value.toUpperCase();
-                if (!s.includes(':')) {
-                    if (currentCat === 'crypto') s = 'BINANCE:' + s;
-                    else if (currentCat === 'forex') s = 'FX_IDC:' + s;
-                }
-                
-                if(!storage[currentCat].includes(s)) {
-                    storage[currentCat].push(s);
-                    save();
-                }
-                loadChart(s);
-                renderWatchlist(false);
-                this.value = '';
-                if (window.innerWidth < 1024) closeDrawers();
-            }
+    function updateActiveState(symbol) {
+        document.querySelectorAll('.list-item').forEach(el => {
+            el.classList.toggle('active', el.dataset.sym === symbol);
+        });
+    }
+
+    function renderWatchlist(shouldLoadFirst = true) {
+        const listEl = document.getElementById('watchlist');
+        listEl.innerHTML = '';
+        storage[currentCat].forEach(sym => {
+            const div = document.createElement('div');
+            div.className = 'list-item';
+            div.dataset.sym = sym;
+            div.innerHTML = `
+                <div class="flex-1" onclick="loadChart('${sym}')">
+                    <div class="font-bold text-[16px]">${sym.split(':')[1] || sym}</div>
+                    <div class="text-[10px] text-gray-600 font-mono tracking-widest uppercase">${sym.split(':')[0]}</div>
+                </div>
+                <button onclick="removeSym('${sym}', event)" class="text-gray-600 px-3 text-2xl">&times;</button>`;
+            listEl.appendChild(div);
+        });
+        if (shouldLoadFirst && storage[currentCat].length > 0) loadChart(storage[currentCat][0]);
+    }
+
+    window.removeSym = function(sym, e) {
+        e.stopPropagation();
+        storage[currentCat] = storage[currentCat].filter(s => s !== sym);
+        save();
+        renderWatchlist(false);
+    };
+
+    function save() { localStorage.setItem(STORAGE_KEY, JSON.stringify(storage)); }
+
+    // 導航切換
+    document.querySelectorAll('.nav-item').forEach(nav => {
+        nav.onclick = function() {
+            document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+            this.classList.add('active');
+            currentCat = this.dataset.cat;
+            renderWatchlist(true);
         };
+    });
 
-        function toggleDrawer(side) {
-            const left = document.getElementById('left-drawer');
-            const right = document.getElementById('right-drawer');
-            const btns = { left: document.getElementById('btn-left'), right: document.getElementById('btn-right'), chart: document.getElementById('btn-chart') };
-            Object.values(btns).forEach(b => b.classList.remove('active'));
-            if (side === 'left') {
-                left.classList.toggle('active'); right.classList.remove('active');
-                if(left.classList.contains('active')) btns.left.classList.add('active');
-                else btns.chart.classList.add('active');
-            } else {
-                right.classList.toggle('active'); left.classList.remove('active');
-                if(right.classList.contains('active')) btns.right.classList.add('active');
-                else btns.chart.classList.add('active');
+    // 搜尋邏輯
+    document.getElementById('new-sym').onkeypress = function(e) {
+        if (e.key === 'Enter' && this.value) {
+            let s = this.value.toUpperCase();
+            if (!s.includes(':')) {
+                if (currentCat === 'crypto') s = 'BINANCE:' + s;
+                else if (currentCat === 'forex') s = 'FX_IDC:' + s;
             }
-        }
-
-        function closeDrawers() {
-            document.getElementById('left-drawer').classList.remove('active');
-            document.getElementById('right-drawer').classList.remove('active');
-            document.getElementById('btn-chart').classList.add('active');
-            document.getElementById('btn-left').classList.remove('active');
-            document.getElementById('btn-right').classList.remove('active');
-        }
-
-        new Sortable(document.getElementById('watchlist'), {
-            animation: 150, onEnd: () => {
-                storage[currentCat] = Array.from(document.querySelectorAll('.list-item')).map(el => el.dataset.sym);
+            if (!storage[currentCat].includes(s)) {
+                storage[currentCat].push(s);
                 save();
             }
-        });
+            loadChart(s);
+            renderWatchlist(false);
+            this.value = '';
+            if (window.innerWidth < 1024) closeDrawers();
+        }
+    };
 
-        // 頁面卸載時關閉 WebSocket
-        window.addEventListener('beforeunload', () => {
-            if (maxWs) maxWs.close();
-        });
-    </script>
+    function toggleDrawer(side) {
+        const left = document.getElementById('left-drawer');
+        const right = document.getElementById('right-drawer');
+        const btns = {
+            left: document.getElementById('btn-left'),
+            right: document.getElementById('btn-right'),
+            chart: document.getElementById('btn-chart')
+        };
+        Object.values(btns).forEach(b => b.classList.remove('active'));
+        if (side === 'left') {
+            left.classList.toggle('active');
+            right.classList.remove('active');
+            if (left.classList.contains('active')) btns.left.classList.add('active');
+            else btns.chart.classList.add('active');
+        } else {
+            right.classList.toggle('active');
+            left.classList.remove('active');
+            if (right.classList.contains('active')) btns.right.classList.add('active');
+            else btns.chart.classList.add('active');
+        }
+    }
+
+    function closeDrawers() {
+        document.getElementById('left-drawer').classList.remove('active');
+        document.getElementById('right-drawer').classList.remove('active');
+        document.getElementById('btn-chart').classList.add('active');
+        document.getElementById('btn-left').classList.remove('active');
+        document.getElementById('btn-right').classList.remove('active');
+    }
+
+    new Sortable(document.getElementById('watchlist'), {
+        animation: 150,
+        onEnd: () => {
+            storage[currentCat] = Array.from(document.querySelectorAll('.list-item')).map(el => el.dataset.sym);
+            save();
+        }
+    });
+
+    // 頁面卸載時清理
+    window.addEventListener('beforeunload', () => {
+        clearInterval(maxPingTimer);
+        if (maxWs) maxWs.close();
+    });
+</script>
+```
+
 </body>
 </html>
